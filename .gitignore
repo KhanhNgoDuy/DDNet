@@ -2,4 +2,5 @@ data/
 notebook/*.task
 result/
 results old pose/
-
+*.jpg
+d_30_64/

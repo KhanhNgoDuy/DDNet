@@ -24,6 +24,7 @@ parser.add_argument('-lr', type=float, default=0.1)
 parser.add_argument('-epoch', type=int, default=50)
 parser.add_argument('-load_model', type=str, default='')
 parser.add_argument('-batch_size', type=int, default=None)
+parser.add_argument('-n_joints', type=int, default=42)
 parser.add_argument('-n_frames', type=int, default=60)
 parser.add_argument('-n_filters', type=int, default=64)
 parser.add_argument('-feat_dims', type=int, default=210)
@@ -55,7 +56,7 @@ def main():
     print(args)
 
     n_frames = args.n_frames
-    n_joints = 42
+    n_joints = args.n_joints
     joint_dims = 3
     n_filters = args.n_filters
     feat_dims = args.feat_dims
@@ -73,7 +74,7 @@ def main():
     model = TDNet(*params)
 
 
-    datasets = get_datasets(args.dataset, args.n_frames, n_classes, args.root, args.is_balanced)
+    datasets = get_datasets(args.dataset, args.n_frames, n_joints, n_classes, args.root, args.is_balanced)
     if args.batch_size == 0:
         args.batch_size = int(len(datasets['train']) / 6)
     dataloaders = get_dataloaders(args.batch_size, datasets, args.num_workers)
@@ -93,7 +94,7 @@ def main():
         print('Default settings')
 
     optimizer = optim.Adam(model.parameters(), lr=args.lr)
-    lr_sched = optim.lr_scheduler.ReduceLROnPlateau(optimizer, factor=0.5, min_lr=1e-5, patience=5, verbose=True)
+    lr_sched = optim.lr_scheduler.ReduceLROnPlateau(optimizer, factor=0.5, min_lr=1e-5, patience=7, verbose=True)
 
     model.to(device)
 
@@ -123,6 +124,7 @@ def training_loop(num_epoch, model, dataloaders, criterion, optimizer, lr_sched,
     best_val_acc = 0
     
     root = 'result/checkpoint'
+
     name_str = ''
     if args.weighted:
         name_str += 'w'
@@ -130,8 +132,9 @@ def training_loop(num_epoch, model, dataloaders, criterion, optimizer, lr_sched,
         name_str += 'b'
     if not args.weighted and not args.is_balanced:
         name_str += 'd'
-    name_str = f'{name_str}_{args.n_frames}_{args.n_filters}'
+    name_str = f'{name_str}_{args.n_frames}_{args.n_filters}_{args.n_joints}'
     print(f'Model name: {name_str}')
+
     checkpoint_path = os.path.join(root, name_str)
     pathlib.Path(checkpoint_path).mkdir(parents=True, exist_ok=True)
 
@@ -140,7 +143,7 @@ def training_loop(num_epoch, model, dataloaders, criterion, optimizer, lr_sched,
         print(f'Epoch {epoch}/{num_epoch}')
 
         train_loss, train_acc = train_step(model, dataloaders['train'], criterion, optimizer, device)
-        val_loss, val_acc = val_step(model, dataloaders['val'], criterion, device)
+        val_loss, val_acc, preds, targets = val_step(model, dataloaders['val'], criterion, device)
         lr_sched.step(val_loss)
 
         # Create logging files
@@ -160,10 +163,14 @@ def training_loop(num_epoch, model, dataloaders, criterion, optimizer, lr_sched,
             dump_weight(os.path.join(checkpoint_path, model_name), model, optimizer, lr_sched, epoch+1)
 
         if val_acc > best_val_acc:
-            best_val_acc = val_acc
             print(f'Best {val_acc=} % at epoch {epoch}')
+
             model_name = f'acc_{epoch}.pth'
             dump_weight(os.path.join(checkpoint_path, model_name), model, optimizer, lr_sched, epoch+1)
+
+            create_offline_logging(targets, preds, name_str)
+            best_val_acc = val_acc
+            
 
         print("Epoch", epoch,
               "Total_Time", round(time.perf_counter() - since),
@@ -182,8 +189,7 @@ def forward(model, pose, motion, target, criterion):
 def train_step(model, dataloader, criterion, optimizer, device):
     tot_loss = 0
     correct = n_instances = 0
-    marker = math.floor(len(dataloader)/3)
-    since = time.perf_counter()
+    
     for counter, ([pose, motion], target) in enumerate(dataloader, start=1):
         #pose, motion = pose.float(), motion.float()
         pose, motion, target = pose.to(device), motion.to(device), target.to(device)
@@ -200,16 +206,12 @@ def train_step(model, dataloader, criterion, optimizer, device):
         loss.backward()
         optimizer.step()
         
-        #if counter % marker == 0:
-        #    print(f'\tPredict: {torch.argmax(output, dim=1).detach().cpu().numpy()}')
-        #    print(f'\tTargets: {target.detach().cpu().numpy()}')
-        
     epoch_loss = (tot_loss / counter).item()
     acc = correct / n_instances
     acc = round((acc*100).item(), 4)
     print('Train loss: ', epoch_loss)
     print(f'Train accuracy: {acc}%')
-    #print('Training time:', time.perf_counter() - since)
+    
     return epoch_loss, acc
 
 
@@ -231,13 +233,12 @@ def val_step(model, dataloader, criterion, device):
 
             tot_loss += loss.item()
             correct += (torch.argmax(output, dim=1) == target).float().sum()
-
-            if counter < 20:
-                preds.append(torch.argmax(output, dim=1).item())
-                targets.append(target.item())
+        
+            preds.append(torch.argmax(output, dim=1).item())
+            targets.append(target.item())
 	
-        print(f'\tPredict: {preds}')
-        print(f'\tTargets: {targets}')
+        print(f'\tPredict: {preds[:20]}')
+        print(f'\tTargets: {targets[:20]}')
 	
         epoch_loss = tot_loss / counter
         acc = correct / len(dataloader)
@@ -246,8 +247,10 @@ def val_step(model, dataloader, criterion, device):
     print('Val loss: ', epoch_loss)
     print(f'Val accuracy: {acc}%')
 
+    preds = torch.tensor(preds)
+    targets = torch.tensor(targets)
 
-    return epoch_loss, acc
+    return epoch_loss, acc, preds, targets
 
 
 if __name__ == '__main__':
