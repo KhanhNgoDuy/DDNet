@@ -34,3 +34,8 @@ def spatial_padding(pose):
 
     return target
 
+
+def random_horizontal_flipping(pose):
+    if random.randint(0, 1) == 1:
+        pose[:, :, 0] = -pose[:, :, 0]      # Change sign on the x axis
+    return pose

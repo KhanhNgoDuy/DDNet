@@ -30,6 +30,7 @@ parser.add_argument('-n_filters', type=int, default=64)
 parser.add_argument('-feat_dims', type=int, default=210)
 parser.add_argument('-num_workers', type=int, default=0)
 parser.add_argument('-is_balanced', type=str, default='False')
+parser.add_argument('-transform', type=str, default='False')
 parser.add_argument('-weighted', type=str, default='False')
 args = parser.parse_args()
 
@@ -52,6 +53,7 @@ torch.set_default_dtype(torch.float64)
 def main():
     args.is_balanced = eval(args.is_balanced)
     args.weighted = eval(args.weighted)
+    args.transform = eval(args.transform)
     
     print(args)
 
@@ -61,7 +63,7 @@ def main():
     n_filters = args.n_filters
     feat_dims = args.feat_dims
     n_classes = 20 
-    drop_rate = 0.5
+    drop_rate = 0.75
 
     params = [n_joints,
               joint_dims,
@@ -74,7 +76,7 @@ def main():
     model = TDNet(*params)
 
 
-    datasets = get_datasets(args.dataset, args.n_frames, n_joints, n_classes, args.root, args.is_balanced)
+    datasets = get_datasets(args.dataset, args.n_frames, n_joints, n_classes, args.root, args.is_balanced, args.transform)
     if args.batch_size == 0:
         args.batch_size = int(len(datasets['train']) / 6)
     dataloaders = get_dataloaders(args.batch_size, datasets, args.num_workers)
@@ -94,7 +96,7 @@ def main():
         print('Default settings')
 
     optimizer = optim.Adam(model.parameters(), lr=args.lr)
-    lr_sched = optim.lr_scheduler.ReduceLROnPlateau(optimizer, factor=0.5, min_lr=1e-5, patience=7, verbose=True)
+    lr_sched = optim.lr_scheduler.ReduceLROnPlateau(optimizer, factor=0.5, patience=7, min_lr=1e-5, verbose=True)
 
     model.to(device)
 
@@ -176,6 +178,8 @@ def training_loop(num_epoch, model, dataloaders, criterion, optimizer, lr_sched,
               "Total_Time", round(time.perf_counter() - since),
               "Epoch_time", round(time.perf_counter() - since1))
         print()
+    print(f'Best acc: {best_val_acc}')
+    print(f'Best loss: {best_val_loss}')
 
 
 def forward(model, pose, motion, target, criterion):
@@ -191,7 +195,6 @@ def train_step(model, dataloader, criterion, optimizer, device):
     correct = n_instances = 0
     
     for counter, ([pose, motion], target) in enumerate(dataloader, start=1):
-        #pose, motion = pose.float(), motion.float()
         pose, motion, target = pose.to(device), motion.to(device), target.to(device)
         optimizer.zero_grad()
 

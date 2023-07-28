@@ -17,7 +17,7 @@ torch.set_default_dtype(torch.float64)
 
 # New dataset with additional 6 pose keypoints
 class MyDataset(Dataset):
-    def __init__(self, split, root, n_joints, n_frames, n_classes, is_balanced):
+    def __init__(self, split, root, n_joints, n_frames, n_classes, is_balanced, transform):
         self.split = split
         self.root = root
         self.n_joints = n_joints
@@ -25,11 +25,14 @@ class MyDataset(Dataset):
         self.n_classes = n_classes
         self.is_balanced = is_balanced
         self.data = self.make_dataset()
+        self.transform = transform
 
     def __getitem__(self, index):
         vid_name, label, start, end = self.data[index]
 
         pose = self.extract_pose(vid_name, start, end)
+        if self.transform:
+            pose = dp.random_horizontal_flipping(pose)
         pose = dp.temporal_padding(pose, self.n_frames)
         motion = self.get_CG(pose)
 
@@ -106,7 +109,7 @@ class OldDataset(Dataset):
     
     def make_dataset(self):
         self.pose_dict = {}
-        pose_path = Path(self.root) / 'pose_ver1'
+        pose_path = Path(self.root) / 'pose_legacy_order'
 
         for pose_file in pose_path.glob('*.npy'):
             subj_name = pose_file.stem

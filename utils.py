@@ -77,7 +77,7 @@ def get_CG(self, p):
     return M
 
 
-def get_datasets(dataset, n_frames, n_joints, n_classes, root, is_balanced):
+def get_datasets(dataset, n_frames, n_joints, n_classes, root, is_balanced, transform):
     if dataset == 'IPN':
         dataset = IPN
         root = os.path.join(root, 'IPN')
@@ -96,7 +96,8 @@ def get_datasets(dataset, n_frames, n_joints, n_classes, root, is_balanced):
         n_frames=n_frames,
         n_classes=n_classes,
         n_joints=n_joints,
-        is_balanced=is_balanced
+        is_balanced=is_balanced,
+        transform=transform
     )
     val_dataset = dataset(
         split='val',
@@ -104,7 +105,8 @@ def get_datasets(dataset, n_frames, n_joints, n_classes, root, is_balanced):
         n_frames=n_frames,
         n_joints=n_joints,
         n_classes=n_classes,
-        is_balanced=False
+        is_balanced=False,
+        transform=False
     )
     datasets = {'train': train_dataset, 'val': val_dataset}
     return datasets

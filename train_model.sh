@@ -9,9 +9,10 @@ python train.py \
 -epoch 200 \
 -batch_size 16 \
 -n_frames 70 \
--n_filters 48 \
+-n_filters 80 \
 -n_joints 48 \
 -feat_dims 1128 \
 -num_workers 1 \
 -is_balanced False \
 -weighted False \
+-transform True \
